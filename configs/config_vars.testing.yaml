@@ -5,3 +5,4 @@ logger-level: debug
 is-testing: true
 server-port: 8080
 dbconnection: postgresql://taxi:taxi123@postgres:5432/taxi
+mongo-connection: mongodb://mongo:27017/taxi_mongo_db

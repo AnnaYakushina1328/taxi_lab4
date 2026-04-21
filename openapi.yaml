@@ -1,8 +1,11 @@
 openapi: 3.0.3
 info:
   title: Taxi Service API
-  version: 1.0.0
-  description: REST API for taxi ordering system built with Yandex userver
+  version: 1.1.0
+  description: >
+    REST API for taxi ordering system built with Yandex userver.
+    The project uses PostgreSQL for the original relational part
+    and MongoDB for the document-oriented part of lab 04.
 
 servers:
   - url: http://127.0.0.1:8080
@@ -12,6 +15,7 @@ tags:
   - name: Auth
   - name: Drivers
   - name: Rides
+  - name: Mongo Users
 
 components:
   securitySchemes:
@@ -23,7 +27,10 @@ components:
   schemas:
     UserCreateRequest:
       type: object
-      required: [login, password, full_name]
+      required:
+        - login
+        - password
+        - full_name
       properties:
         login:
           type: string
@@ -44,7 +51,9 @@ components:
 
     LoginRequest:
       type: object
-      required: [login, password]
+      required:
+        - login
+        - password
       properties:
         login:
           type: string
@@ -59,7 +68,11 @@ components:
 
     DriverCreateRequest:
       type: object
-      required: [user_id, car_model, car_number, license_number]
+      required:
+        - user_id
+        - car_model
+        - car_number
+        - license_number
       properties:
         user_id:
           type: integer
@@ -88,7 +101,10 @@ components:
 
     RideCreateRequest:
       type: object
-      required: [passenger_id, pickup_address, destination_address]
+      required:
+        - passenger_id
+        - pickup_address
+        - destination_address
       properties:
         passenger_id:
           type: integer
@@ -99,7 +115,8 @@ components:
 
     RideAcceptRequest:
       type: object
-      required: [driver_id]
+      required:
+        - driver_id
       properties:
         driver_id:
           type: integer
@@ -119,6 +136,59 @@ components:
           type: string
         status:
           type: string
+
+    MongoUserCreateRequest:
+      type: object
+      required:
+        - login
+        - password
+        - first_name
+        - last_name
+      properties:
+        login:
+          type: string
+          example: mongo.api.user
+        password:
+          type: string
+          example: pass1234
+        first_name:
+          type: string
+          example: Anna
+        last_name:
+          type: string
+          example: Yakushina
+        status:
+          type: string
+          enum: [active, blocked]
+          example: active
+        email:
+          type: string
+          example: mongo.api.user@example.com
+        phone:
+          type: string
+          example: "+79990000000"
+
+    MongoUserResponse:
+      type: object
+      properties:
+        login:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        status:
+          type: string
+        profile:
+          type: object
+          properties:
+            email:
+              type: string
+            phone:
+              type: string
+        source:
+          type: string
+          example: mongo
 
     ErrorResponse:
       type: object
@@ -413,6 +483,74 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Ride cannot be completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /mongo/users:
+    post:
+      tags: [Mongo Users]
+      summary: Create user in MongoDB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MongoUserCreateRequest'
+      responses:
+        '201':
+          description: Mongo user created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MongoUserResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: User already exists in MongoDB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Mongo Users]
+      summary: Find Mongo user by login or name mask
+      parameters:
+        - in: query
+          name: login
+          schema:
+            type: string
+          description: Exact login lookup
+        - in: query
+          name: name_mask
+          schema:
+            type: string
+          description: Case-insensitive substring search in first_name or last_name
+      responses:
+        '200':
+          description: Mongo user or users found
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/MongoUserResponse'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/MongoUserResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Mongo user not found
           content:
             application/json:
               schema:

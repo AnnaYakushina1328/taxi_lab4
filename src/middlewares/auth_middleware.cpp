@@ -27,6 +27,7 @@ bool AuthMiddleware::IsPublicRequest(
   if (path == "/ping") return true;
   if (path == "/users") return true;
   if (path == "/auth/login") return true;
+  if (path == "/mongo/users") return true;
   if (StartsWith(path, "/tests/")) return true;
 
   return false;
