@@ -6,6 +6,8 @@
 #include <userver/server/http/http_status.hpp>
 #include <userver/yaml_config/merge_schemas.hpp>
 
+#include "../performance/simple_performance.hpp"
+
 namespace taxi {
 
 RidesAccept::RidesAccept(
@@ -48,6 +50,8 @@ std::string RidesAccept::HandleRequestThrow(
     error["error"] = "ride cannot be accepted";
     return userver::formats::json::ToString(error.ExtractValue());
   }
+
+  performance::GetCache().InvalidatePrefix("rides:");
 
   userver::formats::json::ValueBuilder result;
   result["id"] = ride->id;

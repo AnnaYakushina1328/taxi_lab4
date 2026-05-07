@@ -6,6 +6,8 @@
 #include <userver/server/http/http_status.hpp>
 #include <userver/yaml_config/merge_schemas.hpp>
 
+#include "../performance/simple_performance.hpp"
+
 namespace taxi {
 
 RidesCreate::RidesCreate(
@@ -43,6 +45,8 @@ std::string RidesCreate::HandleRequestThrow(
     error["error"] = "ride cannot be created";
     return userver::formats::json::ToString(error.ExtractValue());
   }
+
+  performance::GetCache().InvalidatePrefix("rides:");
 
   response.SetStatus(userver::server::http::HttpStatus::kCreated);
 

@@ -1,9 +1,14 @@
 #include "users_get.hpp"
 
+#include <chrono>
+#include <string>
+
 #include <userver/formats/json/serialize.hpp>
 #include <userver/formats/json/value_builder.hpp>
 #include <userver/server/http/http_status.hpp>
 #include <userver/yaml_config/merge_schemas.hpp>
+
+#include "../performance/simple_performance.hpp"
 
 namespace taxi {
 
@@ -23,7 +28,27 @@ std::string UsersGet::HandleRequestThrow(
   const auto login = request.GetArg("login");
   const auto name_mask = request.GetArg("name_mask");
 
-  if (!login.empty()) {
+  const bool has_login = !login.empty();
+  const bool has_name_mask = !name_mask.empty();
+
+  if (has_login == has_name_mask) {
+    response.SetStatus(userver::server::http::HttpStatus::kBadRequest);
+    userver::formats::json::ValueBuilder error;
+    error["error"] = "use exactly one query parameter: login or name_mask";
+    return userver::formats::json::ToString(error.ExtractValue());
+  }
+
+  const std::string cache_key =
+      has_login ? "users:login:" + login : "users:name_mask:" + name_mask;
+
+  if (const auto cached = performance::GetCache().Get(cache_key)) {
+    response.SetHeader(std::string{"X-Cache"}, std::string{"HIT"});
+    return *cached;
+  }
+
+  response.SetHeader(std::string{"X-Cache"}, std::string{"MISS"});
+
+  if (has_login) {
     const auto user = storage_.GetUserByLogin(login);
     if (!user) {
       response.SetStatus(userver::server::http::HttpStatus::kNotFound);
@@ -36,28 +61,28 @@ std::string UsersGet::HandleRequestThrow(
     result["id"] = user->id;
     result["login"] = user->login;
     result["full_name"] = user->full_name;
-    return userver::formats::json::ToString(result.ExtractValue());
+
+    const auto body = userver::formats::json::ToString(result.ExtractValue());
+    performance::GetCache().Set(cache_key, body, std::chrono::seconds{60});
+
+    return body;
   }
 
-  if (!name_mask.empty()) {
-    const auto users = storage_.FindUsersByNameMask(name_mask);
+  const auto users = storage_.FindUsersByNameMask(name_mask);
 
-    userver::formats::json::ValueBuilder result(userver::formats::common::Type::kArray);
-    for (const auto& user : users) {
-      userver::formats::json::ValueBuilder item;
-      item["id"] = user.id;
-      item["login"] = user.login;
-      item["full_name"] = user.full_name;
-      result.PushBack(item.ExtractValue());
-    }
-
-    return userver::formats::json::ToString(result.ExtractValue());
+  userver::formats::json::ValueBuilder result(userver::formats::common::Type::kArray);
+  for (const auto& user : users) {
+    userver::formats::json::ValueBuilder item;
+    item["id"] = user.id;
+    item["login"] = user.login;
+    item["full_name"] = user.full_name;
+    result.PushBack(item.ExtractValue());
   }
 
-  response.SetStatus(userver::server::http::HttpStatus::kBadRequest);
-  userver::formats::json::ValueBuilder error;
-  error["error"] = "login or name_mask query parameter is required";
-  return userver::formats::json::ToString(error.ExtractValue());
+  const auto body = userver::formats::json::ToString(result.ExtractValue());
+  performance::GetCache().Set(cache_key, body, std::chrono::seconds{60});
+
+  return body;
 }
 
 userver::yaml_config::Schema UsersGet::GetStaticConfigSchema() {
