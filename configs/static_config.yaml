@@ -121,4 +121,14 @@ components_manager:
       method: GET
       task_processor: main-task-processor
 
+    handler-mongo-rides-create:
+      path: /mongo/rides
+      method: POST
+      task_processor: main-task-processor
+
+    handler-mongo-rides-get:
+      path: /mongo/rides
+      method: GET
+      task_processor: main-task-processor
+
     auth-middleware: {}

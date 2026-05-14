@@ -190,6 +190,50 @@ components:
           type: string
           example: mongo
 
+
+    MongoRideCreateRequest:
+      type: object
+      required:
+        - user_login
+        - pickup_address
+        - destination_address
+      properties:
+        user_login:
+          type: string
+          example: mongo.api.user
+        pickup_address:
+          type: string
+          example: Moscow, Tverskaya 1
+        destination_address:
+          type: string
+          example: Moscow, Arbat 10
+        amount:
+          type: integer
+          example: 650
+
+    MongoRideResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        user_login:
+          type: string
+        pickup_address:
+          type: string
+        destination_address:
+          type: string
+        amount:
+          type: integer
+        currency:
+          type: string
+        status:
+          type: string
+        driver_login:
+          type: string
+        source:
+          type: string
+          example: mongo
+
     ErrorResponse:
       type: object
       properties:
@@ -551,6 +595,66 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Mongo user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /mongo/rides:
+    post:
+      tags: [Rides]
+      summary: Create ride in MongoDB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MongoRideCreateRequest'
+      responses:
+        '201':
+          description: Mongo ride created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MongoRideResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Mongo user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Rides]
+      summary: Get Mongo rides by active status or user login
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            example: active
+        - in: query
+          name: user_login
+          schema:
+            type: string
+            example: mongo.api.user
+      responses:
+        '200':
+          description: Mongo rides found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MongoRideResponse'
+        '400':
+          description: Invalid query parameters
           content:
             application/json:
               schema:

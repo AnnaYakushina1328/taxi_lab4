@@ -13,6 +13,8 @@
 #include "handlers/drivers_create.hpp"
 #include "handlers/mongo_users_create.hpp"
 #include "handlers/mongo_users_get.hpp"
+#include "handlers/mongo_rides_create.hpp"
+#include "handlers/mongo_rides_get.hpp"
 #include "handlers/rides_accept.hpp"
 #include "handlers/rides_complete.hpp"
 #include "handlers/rides_create.hpp"
@@ -44,6 +46,8 @@ int main(int argc, char* argv[]) {
           .Append<taxi::RidesComplete>()
           .Append<taxi::MongoUsersCreate>()
           .Append<taxi::MongoUsersGet>()
+          .Append<taxi::MongoRidesCreate>()
+          .Append<taxi::MongoRidesGet>()
           .Append<taxi::AuthMiddlewareFactory>();
 
   return userver::utils::DaemonMain(argc, argv, component_list);

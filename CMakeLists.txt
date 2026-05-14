@@ -34,6 +34,8 @@ add_library(
   src/handlers/rides_complete.cpp
   src/handlers/mongo_users_create.cpp
   src/handlers/mongo_users_get.cpp
+  src/handlers/mongo_rides_create.cpp
+  src/handlers/mongo_rides_get.cpp
   src/middlewares/auth_middleware.cpp
 )
 
