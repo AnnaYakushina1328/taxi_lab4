@@ -1,277 +1,299 @@
-# Лабораторная работа 5. Кеширование и rate limiting в сервисе такси
+# Домашнее задание 4: Проектирование и работа с MongoDB
+
+## Вариант 16 — Система заказа такси
 
-Вариант 16: система заказа такси.
+## Описание проекта
+
+В рамках лабораторной работы реализовано проектирование документной модели MongoDB для системы заказа такси на Yandex userver.
+
+Проект продолжает предыдущую лабораторную работу и сохраняет существующий REST API сервис на C++ / userver с подключением к PostgreSQL. В рамках лабораторной работы 4 в проект дополнительно добавлена MongoDB как вторая база данных.
+
+В проекте выполнены:
+
+- проектирование документной модели MongoDB;
+- выбор коллекций и структуры документов;
+- обоснование использования embedded documents и references;
+- заполнение MongoDB тестовыми данными;
+- подготовка MongoDB-запросов для операций варианта;
+- настройка `$jsonSchema`-валидации;
+- подключение MongoDB к API на userver;
+- добавление Mongo endpoint-ов для `users` и `rides`;
+- запуск API, PostgreSQL и MongoDB через Docker Compose.
+
+## Функциональность варианта
+
+Система содержит следующие основные сущности:
+
+- `users` — пользователи;
+- `drivers` — водители;
+- `rides` — поездки.
+
+Для варианта 16 предусмотрены следующие операции:
+
+- создание нового пользователя;
+- поиск пользователя по логину;
+- поиск пользователя по маске имени и фамилии;
+- регистрация водителя;
+- создание заказа поездки;
+- получение активных заказов;
+- принятие заказа водителем;
+- получение истории поездок пользователя;
+- завершение поездки.
+
+## Структура проекта
 
-## Что делает проект
+```text
+taxi_lab4/
+├── configs/
+├── src/
+│   ├── handlers/
+│   ├── middlewares/
+│   ├── models/
+│   └── storage/
+├── tests/
+├── schema.sql
+├── data.sql
+├── queries.sql
+├── optimization.md
+├── schema_design.md
+├── data.js
+├── queries.js
+├── validation.js
+├── openapi.yaml
+├── Dockerfile
+├── docker-compose.yaml
+├── CMakeLists.txt
+└── README.md
+```
 
-Это учебный REST API сервис для заказа такси.
+## Документная модель MongoDB
 
-В проекте есть три основные сущности:
+Для MongoDB выбраны три основные коллекции:
 
-- пользователь;
-- водитель;
-- поездка.
+- `users`;
+- `drivers`;
+- `rides`.
 
-По API можно создать пользователя, найти пользователя по логину или имени, зарегистрировать водителя, создать заказ поездки, получить активные заказы, принять поездку водителем, посмотреть историю поездок пользователя и завершить поездку.
+Использована гибридная модель:
 
-В пятой лабораторной работе добавлены:
+- основные сущности вынесены в отдельные коллекции;
+- небольшие связанные данные хранятся как embedded documents;
+- связи между поездками, пользователями и водителями сохраняются через references.
 
-- кеширование часто повторяющихся GET-запросов;
-- очистка кеша после изменения данных;
-- ограничение частоты запросов для активных заказов;
-- описание выбранного решения в файле `performance_design.md`.
+## Коллекция `users`
 
-## Важное замечание про авторизацию
+Хранит пользователей сервиса такси.
 
-Большая часть API защищена авторизацией. Если выполнять проверочные GET-запросы без токена, сервис вернёт:
+Основные поля:
 
-    HTTP/1.1 401 Unauthorized
+- `_id`;
+- `login`;
+- `password`;
+- `first_name`;
+- `last_name`;
+- `created_at`;
+- `status`;
+- `profile`.
 
-Поэтому перед проверкой кеширования и rate limiting нужно сначала создать тестового пользователя, получить токен через `/auth/login` и дальше передавать его в заголовке:
+## Коллекция `drivers`
 
-    Authorization: Bearer $TOKEN
+Хранит сведения о водителях.
 
-Подробные команды для этого приведены ниже в разделе проверки.
+Основные поля:
 
-## Что кешируется
+- `_id`;
+- `login`;
+- `first_name`;
+- `last_name`;
+- `status`;
+- `registered_at`;
+- `car`;
+- `profile`.
 
-Кеширование добавлено для endpoint-ов:
+## Коллекция `rides`
 
-- `GET /users?login=...`
-- `GET /users?name_mask=...`
-- `GET /rides?status=active`
-- `GET /rides?user_id=...`
+Хранит поездки.
 
-Используется стратегия Cache-Aside. Сначала сервис смотрит, есть ли готовый ответ в кеше. Если есть, он сразу отдаёт его клиенту. Если нет, сервис идёт в PostgreSQL, формирует JSON-ответ и сохраняет его в кеш на короткое время.
+Основные поля:
 
-Для проверки работы кеша в ответ добавлен заголовок:
+- `_id`;
+- `user_id`;
+- `driver_id`;
+- `status`;
+- `created_at`;
+- `accepted_at`;
+- `completed_at`;
+- `route`;
+- `fare`;
+- `user_snapshot`;
+- `driver_snapshot`;
+- `events`.
 
-- `X-Cache: MISS` — ответ был собран через запрос к базе;
-- `X-Cache: HIT` — ответ был взят из кеша.
+Подробное описание документной модели приведено в `schema_design.md`.
 
-TTL:
+## Тестовые данные MongoDB
 
-- пользователи — 60 секунд;
-- история поездок пользователя — 60 секунд;
-- активные поездки — 15 секунд.
+Для MongoDB подготовлен файл `data.js`.
 
-Для активных поездок TTL меньше, потому что список доступных заказов в такси быстро устаревает.
+В нём:
 
-## Инвалидация кеша
+- создаются коллекции `users`, `drivers`, `rides`;
+- удаляются старые данные перед повторной загрузкой;
+- добавляется минимум 10 документов в каждую коллекцию.
 
-Кеш очищается после операций, которые меняют данные:
+Проверка после загрузки:
 
-- `POST /users` — очищается кеш пользователей;
-- `POST /drivers` — очищается кеш водителей;
-- `POST /rides` — очищается кеш поездок;
-- `PATCH /rides/{id}/accept` — очищается кеш поездок;
-- `PATCH /rides/{id}/complete` — очищается кеш поездок.
+```text
+users=10
+drivers=10
+rides=10
+```
 
-Например, если пассажир создал новую поездку, список активных заказов должен обновиться. Поэтому после создания поездки кеш с префиксом `rides:` очищается.
+## Валидация схемы
 
-## Rate limiting
+Для коллекции `users` настроена валидация через `$jsonSchema`.
 
-Rate limiting добавлен для endpoint-а:
+Проверяются:
 
-- `GET /rides?status=active`
+- обязательные поля;
+- типы значений;
+- допустимые значения `status`;
+- формат `login`;
+- длина строк;
+- структура объекта `profile`;
+- формат `email` и `phone`.
 
-Этот endpoint выбран потому, что его могут часто вызывать водители, когда ищут доступные заказы.
+В `validation.js` показаны:
 
-Алгоритм:
+- вставка корректного документа;
+- попытка вставки некорректного документа с ошибкой `Document failed validation`.
 
-- Fixed Window Counter.
+## MongoDB-запросы
 
-Лимит:
+Основные MongoDB-запросы собраны в `queries.js`.
 
-- 100 запросов в минуту.
+В запросах используются:
 
-Если лимит превышен, сервис возвращает:
+- `insertOne`;
+- `findOne`;
+- `find`;
+- `updateOne`;
+- `deleteOne`;
+- `aggregate`.
 
-- `HTTP 429 Too Many Requests`.
+Также используются операторы:
 
-Также в ответе есть заголовки:
+- `$eq`;
+- `$ne`;
+- `$gt`;
+- `$lt`;
+- `$in`;
+- `$and`;
+- `$or`;
+- `$push`.
 
-- `X-RateLimit-Limit`;
-- `X-RateLimit-Remaining`;
-- `X-RateLimit-Reset`;
-- `Retry-After`.
+## Запуск проекта
 
-## Основные файлы
+### 1. Клонирование репозитория
 
-Файлы, которые относятся к пятой лабораторной:
+```bash
+git clone https://github.com/AnnaYakushina1328/taxi_lab4.git
+cd taxi_lab4
+```
 
-- `performance_design.md` — описание решения по кешированию и rate limiting;
-- `src/performance/simple_performance.hpp` — реализация кеша и rate limiter;
-- `src/handlers/users_get.cpp` — кеширование поиска пользователей;
-- `src/handlers/rides_get.cpp` — кеширование поездок и rate limiting;
-- `src/handlers/users_create.cpp` — очистка кеша пользователей;
-- `src/handlers/drivers_create.cpp` — очистка кеша водителей;
-- `src/handlers/rides_create.cpp` — очистка кеша поездок;
-- `src/handlers/rides_accept.cpp` — очистка кеша после принятия поездки;
-- `src/handlers/rides_complete.cpp` — очистка кеша после завершения поездки;
-- `Dockerfile` — сборка приложения;
-- `docker-compose.yaml` — запуск приложения, PostgreSQL и MongoDB.
+### 2. Запуск PostgreSQL, MongoDB и API
 
-## Быстрый запуск для проверки
+```bash
+docker compose up -d --build
+```
 
-Склонировать репозиторий:
+### 3. Проверка контейнеров
 
-    git clone https://github.com/AnnaYakushina1328/taxi_lab5.git
-    cd taxi_lab5
+```bash
+docker compose ps
+```
 
-Запустить проект:
+### 4. Проверка доступности API
 
-    docker compose up --build -d
+```bash
+curl -i http://localhost:8080/ping
+```
 
-Проверить контейнеры:
+Ожидаемый ответ:
 
-    docker compose ps
+```text
+HTTP/1.1 200 OK
+```
 
-Нужно дождаться, чтобы сервисы были в состоянии `healthy`.
+## Работа с MongoDB
 
-Остановить проект после проверки:
+### Загрузка тестовых данных
 
-    docker compose down -v
+```bash
+docker exec -i taxi-mongo mongosh < data.js
+```
 
-## Получение токена для проверки
+### Проверка количества документов
 
-API защищён авторизацией, поэтому сначала нужно получить токен.
+```bash
+docker exec -i taxi-mongo mongosh --quiet --eval '
+db = db.getSiblingDB("taxi_mongo_db");
+print("users=" + db.users.countDocuments());
+print("drivers=" + db.drivers.countDocuments());
+print("rides=" + db.rides.countDocuments());
+'
+```
 
-Создать тестового пользователя:
+### Запуск валидации схемы
 
-    curl -s -X POST "http://localhost:8080/users" -H "Content-Type: application/json" -d '{"login":"cache_test_user","password":"pass123","full_name":"Cache Test User"}'
+```bash
+docker exec -i taxi-mongo mongosh < validation.js
+```
 
-Если пользователь уже существует, это не страшно. Можно сразу выполнить логин.
+### Запуск MongoDB-запросов
 
-Получить токен:
+```bash
+docker exec -i taxi-mongo mongosh < queries.js
+```
 
-    TOKEN=$(curl -s -X POST "http://localhost:8080/auth/login" -H "Content-Type: application/json" -d '{"login":"cache_test_user","password":"pass123"}' | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))')
+## MongoDB endpoint-ы в API
 
-Проверить, что токен получен:
+Для демонстрации подключения MongoDB к сервису на userver добавлены отдельные endpoint-ы.
 
-    echo $TOKEN
+### Users
 
-Если команда вывела пустую строку, значит токен не получен и защищённые запросы вернут `401 Unauthorized`.
+- `POST /mongo/users` — создание пользователя в MongoDB;
+- `GET /mongo/users?login=...` — поиск пользователя по логину в MongoDB;
+- `GET /mongo/users?name_mask=...` — поиск пользователей по маске имени или фамилии в MongoDB.
 
-Дальше во всех проверочных запросах используется заголовок:
+Примеры:
 
-    -H "Authorization: Bearer $TOKEN"
+```bash
+curl -i -X POST http://localhost:8080/mongo/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "login": "mongo.api.user",
+    "password": "pass1234",
+    "first_name": "Anna",
+    "last_name": "Yakushina"
+  }'
+```
 
-## Проверка кеша на активных поездках
+```bash
+curl -i "http://localhost:8080/mongo/users?login=mongo.api.user"
+```
 
-Первый запрос должен пойти в базу и вернуть `X-Cache: MISS`:
+```bash
+curl -G -i --data-urlencode "name_mask=Ann" http://localhost:8080/mongo/users
+```
 
-    curl -s -D - -o /tmp/rides_1.json -H "Authorization: Bearer $TOKEN" "http://localhost:8080/rides?status=active" | grep -Ei "HTTP/|X-Cache|X-RateLimit"
-    cat /tmp/rides_1.json
+### Rides
 
-Повторный такой же запрос должен вернуться из кеша и показать `X-Cache: HIT`:
+- `POST /mongo/rides` — создание заказа поездки в MongoDB;
+- `GET /mongo/rides?status=active` — получение активных поездок из MongoDB;
+- `GET /mongo/rides?user_login=...` — получение истории поездок пользователя из MongoDB.
 
-    curl -s -D - -o /tmp/rides_2.json -H "Authorization: Bearer $TOKEN" "http://localhost:8080/rides?status=active" | grep -Ei "HTTP/|X-Cache|X-RateLimit"
-    cat /tmp/rides_2.json
-
-Ожидаемый результат:
-
-    X-Cache: MISS
-    X-Cache: HIT
-
-У этого же endpoint-а должны быть заголовки rate limiting:
-
-    X-RateLimit-Limit
-    X-RateLimit-Remaining
-    X-RateLimit-Reset
-
-## Проверка кеша на истории поездок
-
-Первый запрос:
-
-    curl -s -D - -o /tmp/rides_history_1.json -H "Authorization: Bearer $TOKEN" "http://localhost:8080/rides?user_id=1" | grep -Ei "HTTP/|X-Cache"
-    cat /tmp/rides_history_1.json
-
-Повторный запрос:
-
-    curl -s -D - -o /tmp/rides_history_2.json -H "Authorization: Bearer $TOKEN" "http://localhost:8080/rides?user_id=1" | grep -Ei "HTTP/|X-Cache"
-    cat /tmp/rides_history_2.json
-
-Ожидаемый результат:
-
-    X-Cache: MISS
-    X-Cache: HIT
-
-Если сразу появился `X-Cache: HIT`, значит этот запрос уже выполнялся раньше и ответ ещё не успел устареть по TTL.
-
-## Проверка кеша на пользователях
-
-Первый запрос:
-
-    curl -s -D - -o /tmp/users_1.json -H "Authorization: Bearer $TOKEN" "http://localhost:8080/users?name_mask=Cache" | grep -Ei "HTTP/|X-Cache"
-    cat /tmp/users_1.json
-
-Повторный запрос:
-
-    curl -s -D - -o /tmp/users_2.json -H "Authorization: Bearer $TOKEN" "http://localhost:8080/users?name_mask=Cache" | grep -Ei "HTTP/|X-Cache"
-    cat /tmp/users_2.json
-
-Ожидаемый результат:
-
-    X-Cache: MISS
-    X-Cache: HIT
-
-## Проверка rate limiting
-
-Перед проверкой можно подождать минуту, чтобы счётчик запросов был чистым:
-
-    sleep 65
-
-Запустить 105 запросов подряд:
-
-    for i in $(seq 1 105); do curl -s -o /dev/null -w "$i -> %{http_code}\n" -H "Authorization: Bearer $TOKEN" "http://localhost:8080/rides?status=active"; done
-
-До сотого запроса должны возвращаться ответы `200`. После превышения лимита должны появиться `429`.
-
-Пример:
-
-    99 -> 200
-    100 -> 200
-    101 -> 429
-    102 -> 429
-
-Проверить заголовки после превышения лимита:
-
-    curl -i -H "Authorization: Bearer $TOKEN" "http://localhost:8080/rides?status=active"
-
-Ожидаемые заголовки:
-
-    HTTP/1.1 429 Too Many Requests
-    X-RateLimit-Limit: 100
-    X-RateLimit-Remaining: 0
-    X-RateLimit-Reset: ...
-    Retry-After: 60
-
-Если при проверке сразу возвращается `429`, значит лимит уже был израсходован в текущем минутном окне. Нужно подождать около минуты и повторить запрос.
-
-## Короткая проверка одной командой
-
-После запуска Docker и получения токена можно быстро проверить кеш активных поездок:
-
-    curl -s -D - -o /tmp/rides_1.json -H "Authorization: Bearer $TOKEN" "http://localhost:8080/rides?status=active" | grep -Ei "HTTP/|X-Cache|X-RateLimit"
-    curl -s -D - -o /tmp/rides_2.json -H "Authorization: Bearer $TOKEN" "http://localhost:8080/rides?status=active" | grep -Ei "HTTP/|X-Cache|X-RateLimit"
-
-В выводе должно быть сначала `X-Cache: MISS`, потом `X-Cache: HIT`.
-
-## Документация
-
-Подробное описание выбора hot paths, TTL, инвалидации кеша и rate limiting находится в файле:
-
-- `performance_design.md`
-
-
-## MongoDB endpoint-ы для rides
-
-Дополнительно в API добавлены endpoint-ы для работы с поездками в MongoDB:
-
-- `POST /mongo/rides` — создание заказа поездки в MongoDB
-- `GET /mongo/rides?status=active` — получение активных поездок из MongoDB
-- `GET /mongo/rides?user_login=...` — получение истории поездок пользователя из MongoDB
+Примеры:
 
 ```bash
 curl -i -X POST http://localhost:8080/mongo/rides \
@@ -292,3 +314,20 @@ curl -i "http://localhost:8080/mongo/rides?status=active"
 curl -i "http://localhost:8080/mongo/rides?user_login=mongo.api.user"
 ```
 
+## Ограничения текущей реализации
+
+- MongoDB используется как дополнительная база данных;
+- основная логика старого API по-прежнему завязана на PostgreSQL;
+- пароли в тестовых данных хранятся в открытом виде для учебной демонстрации;
+- проект ориентирован на учебную демонстрацию документной модели и MongoDB-запросов.
+
+## Вывод
+
+В рамках лабораторной работы была спроектирована документная модель MongoDB для системы заказа такси. В проект добавлена вторая база данных без отказа от PostgreSQL, подготовлены тестовые данные, запросы, схема валидации и отдельные Mongo endpoint-ы для `users` и `rides`.
+
+В результате получен проект, который:
+
+- запускается через Docker Compose;
+- использует PostgreSQL и MongoDB в одном сервисе;
+- содержит документную модель для варианта 16;
+- включает MongoDB-скрипты, документацию и примеры запуска.
